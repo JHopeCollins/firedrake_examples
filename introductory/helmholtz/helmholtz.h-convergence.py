@@ -6,6 +6,8 @@ import firedrake as fd
 
 def l2error( u : fd.Function,
              v : fd.Function ):
+    if u.function_space() != v.function_space() :
+        raise ValueError( "fd.Function 'u' and fd.Function 'v' should belong to the same fd.FunctionSpace" )
     return fd.assemble( fd.dot( u-v,u-v )*fd.dx )
 
 def helmholtz_solve( V    : fd.FunctionSpace,
@@ -37,20 +39,7 @@ def helmholtz_solve( V    : fd.FunctionSpace,
 
     return uresult
 
-def helmholtz_error( V      : fd.FunctionSpace,
-                     rhs    : fd.Function,
-                     uexact : fd.Function ):
-
-    if rhs.function_space() != V :
-        raise ValueError( "fd.Function 'rhs' should belong to the fd.FunctionSpace 'V'" )
-
-    if uexact.function_space() != V :
-        raise ValueError( "fd.Function 'uexact' should belong to the fd.FunctionSpace 'V'" )
-
-    return l2error( helmholtz_solve(V,rhs), uexact )
-
 def simple_helmholtz( nx, order ):
-    # set up domain on unit square
     mesh = fd.UnitSquareMesh( nx,nx )
     x,y = fd.SpatialCoordinate( mesh )
 
@@ -66,20 +55,34 @@ def simple_helmholtz( nx, order ):
     uexact = fd.Function(V)
     uexact.interpolate( fd.cos(2*fd.pi*x)*fd.cos(2*fd.pi*y) )
 
-    return np.sqrt( helmholtz_error(V,f,uexact) )
+    return np.sqrt( l2error( helmholtz_solve(V,f), uexact ) )
+
+### === --- main --- === ###
 
 order=1
 mesh_sizes = np.array([8,16,32,64,128])
 solution_errors = np.zeros_like(mesh_sizes,dtype=float)
 
-for i in range(0,mesh_sizes.size):
-    n = mesh_sizes[i]
-    solution_errors[i] = simple_helmholtz(n,order)
-    e = simple_helmholtz(n,order)
-    print( i, " | ", mesh_sizes[i], " | ", solution_errors[i] )
+print( "element order: ", order )
+print( "nx   |  error       |  convergence rate" )
+for i in range( 0, len(mesh_sizes) ):
+    error = simple_helmholtz( mesh_sizes[i], order )
+    solution_errors[i] = error
 
-plt.plot(mesh_sizes[0]/mesh_sizes,solution_errors/solution_errors[0])
-plt.xscale('log')
-plt.yscale('log')
-plt.show()
+    error0 = solution_errors[max(0,i-1)]
+    convergence_rate = np.sqrt(  error0 / error )
+
+    print( str(mesh_sizes[i]).ljust(4),
+           "| ",
+           np.format_float_scientific( error, precision=4 ),
+           " | ",
+           np.format_float_scientific( convergence_rate, precision=2 ) )
+
+relative_sizes  = mesh_sizes[0]/mesh_sizes
+relative_errors = solution_errors/solution_errors[0]
+
+#plt.plot( relative_sizes, relative_errors )
+#plt.xscale('log')
+#plt.yscale('log')
+#plt.show()
 
