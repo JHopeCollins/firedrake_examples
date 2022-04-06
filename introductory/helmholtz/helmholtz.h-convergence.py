@@ -81,6 +81,9 @@ for i in range( 0, len(mesh_sizes) ):
 relative_sizes  = mesh_sizes[0]/mesh_sizes
 relative_errors = solution_errors/solution_errors[0]
 
+# write paraview file to visualise the solution
+fd.File("helmholtz.pvd").write(u)
+
 #plt.plot( relative_sizes, relative_errors )
 #plt.xscale('log')
 #plt.yscale('log')
