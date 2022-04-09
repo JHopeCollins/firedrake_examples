@@ -27,7 +27,7 @@ f.interpolate( (1+8*fd.pi*fd.pi)*fd.cos(x*fd.pi*2)*fd.cos(y*fd.pi*2) )
 a = ( fd.inner( fd.grad(u), fd.grad(v) ) + fd.inner( u,v ) )*fd.dx
 L = fd.inner( f, v )*fd.dx
 
-# redifine u as function in V to hold the solution
+# redefine u as function in V to hold the solution
 u = fd.Function(V)
 
 # solve with PETSc arguments:

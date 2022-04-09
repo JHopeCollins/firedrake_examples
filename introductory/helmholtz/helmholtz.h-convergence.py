@@ -7,7 +7,7 @@ import firedrake as fd
 def l2error( u : fd.Function,
              v : fd.Function ):
     if u.function_space() != v.function_space() :
-        raise ValueError( "fd.Function 'u' and fd.Function 'v' should belong to the same fd.FunctionSpace" )
+        raise ValueError( "fd.Function 'u' and fd.Function 'v' must belong to the same fd.FunctionSpace" )
     return fd.assemble( fd.dot( u-v,u-v )*fd.dx )
 
 def helmholtz_solve( V    : fd.FunctionSpace,
