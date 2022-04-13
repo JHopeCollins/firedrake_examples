@@ -1,43 +1,39 @@
 
 import firedrake as fd
-from math import pi
 
-# time durations in seconds
-second = 1.
-minute = 60*second
-hour = 60*minute
-day = 24*hour
+from firedrake_utils import units
+from firedrake_utils.planets import earth
+
+import firedrake_utils.shallow_water.linear as swe
+from firedrake_utils.shallow_water.williamson1992 import case2
 
 
 ### === --- inputs --- === ###
 
 # constants from Williamson1992
-R0 = 6371220.           # earth's radius
-Omega = 7.292e-5        # earth's rotation
-g = 9.80616             # earth's gravity
-gh0 = 2.94e4            # gravity * mean height
-period = 12.0           # days taken for velocity to travel circumference
+gh0 = case2.gh0
 
 # time discretisation
-delta_t = 20*minute     # implicit timestep size
-tmax = 2*day            # simulation time
-theta = 0.0             # implicit theta-method ( 0: backward Euler, 0.5: trapezium )
-out_freq = 3            # number of delta_ts between snapshots
+delta_t = 20*units.minute  # implicit timestep size
+tmax = 1*units.hour        # simulation time
+theta = 0.0                # implicit theta-method ( 0: backward Euler, 0.5: trapezium )
+out_freq = 1               # number of delta_ts between snapshots
 
 # mesh refinement
 refinement_level = 3
 
 # function space degrees
-element_degree = 3
+element_degree = 2
 
 
 ### === --- process inputs --- === ###
 
-H = fd.Constant(gh0/g)    # mean depth
-Omega = fd.Constant(Omega)
-g = fd.Constant(g)
-u0 = fd.Constant(2*pi*R0/(period*day))    # max velocity
+g = fd.Constant(earth.gravity)
+H = fd.Constant(case2.h0)    # mean depth
+Omega = fd.Constant(earth.omega)
+u0 = fd.Constant(case2.u0)    # max velocity
 dt = fd.Constant(delta_t)
+R0 = fd.Constant(earth.radius)
 
 velocity_degree = element_degree
 height_degree = element_degree-1
@@ -46,64 +42,33 @@ mesh_degree = element_degree+1
 
 ### === --- set up mesh --- === ###
 
-earth = fd.IcosahedralSphereMesh(
-            radius = R0,
+globe = earth.IcosahedralMesh(
             refinement_level = refinement_level,
             degree = mesh_degree )
 
-R0 = fd.Constant(R0)
-
-earth.init_cell_orientations( fd.SpatialCoordinate( earth ) )
-x,y,z = fd.SpatialCoordinate( earth )
+x,y,z = fd.SpatialCoordinate( globe )
 
 
 ### === --- function spaces --- === ###
 
 # solution function spaces
-V1 = fd.FunctionSpace( earth, "BDM", velocity_degree )
-V2 = fd.FunctionSpace( earth, "DG",    height_degree )
+V1 = fd.FunctionSpace( globe, "BDM", velocity_degree )
+V2 = fd.FunctionSpace( globe, "DG",    height_degree )
 W  = fd.MixedFunctionSpace( (V1,V2) )
 
 # function space for coriolis parameter
-Vf = fd.FunctionSpace( earth, "CG", mesh_degree )
+Vf = fd.FunctionSpace( globe, "CG", mesh_degree )
 
 
 ### === --- analytical solution --- === ###
 
-# steady-state analytical solution to nonlinear SWE
+# steady-state geostrophic balance solution to nonlinear SWE
 
-# coriolis parameter
-f_exp = 2*Omega*z/R0
-f = fd.Function(Vf).interpolate( f_exp )
+f = case2.coriolis_function(      x,y,z, Vf )
+uexact = case2.velocity_function( x,y,z, V1 )
+hexact = case2.depth_function(    x,y,z, V2 )
 
-# exact profiles for geostrophic balance
-u_exp = fd.as_vector([ -u0*y/R0, u0*x/R0, 0.0 ])
-h_exp = H - ( R0*Omega*u0 + 0.5*u0*u0 )*(z*z/(R0*R0))/g
-
-uexact = fd.Function( V1, name="velocity" ).project(u_exp)
-hexact = fd.Function( V2, name="depth" ).interpolate(h_exp)
-
-fd.File( "williamson2.exact.pvd" ).write(uexact,hexact)
-
-
-### === --- finite element forms --- === ###
-
-# linear shallow water equation forms
-
-outward_normals = fd.CellNormal(earth)
-perp = lambda u: fd.cross( outward_normals, u )
-
-def form_function_h( H, h, u, p ):
-    return ( H*p*fd.div(u) )*fd.dx
-
-def form_function_u( g, f, h, u, w ):
-    return ( fd.inner( w, f*perp(u) ) - g*h*fd.div(w) )*fd.dx
-
-def form_mass_h( h, p ):
-    return ( p*h )*fd.dx
-
-def form_mass_u( u, w ):
-    return fd.inner( u, w )*fd.dx
+fd.File( "williamson2.exact.pvd" ).write( uexact, hexact )
 
 
 ### === --- full equations --- === ###
@@ -112,20 +77,16 @@ def form_mass_u( u, w ):
 un = fd.Function(V1).assign(uexact)
 hn = fd.Function(V2).assign(hexact)
 
+# residual weights for theta method
 imp_weight = fd.Constant( (1-theta)*dt )
 exp_weight = fd.Constant( (  theta)*dt )
 
 u,h = fd.TrialFunctions( W )
 w,p = fd.TestFunctions(  W )
 
-lhs_h = form_mass_h( h,  p ) + imp_weight*form_function_h( H, h,  u,  p )
-rhs_h = form_mass_h( hn, p ) - exp_weight*form_function_h( H, hn, un, p )
-
-lhs_u = form_mass_u( u,  w ) + imp_weight*form_function_u( g, f, h,  u,  w )
-rhs_u = form_mass_u( un, w ) - exp_weight*form_function_u( g, f, hn, un, w )
-
-lhs = lhs_h + lhs_u
-rhs = rhs_h + rhs_u
+# forms for next (lhs) and current (rhs) timesteps
+lhs = swe.form_mass( globe, h, u,  p,w ) + imp_weight*swe.form_function( globe, g,H,f, h, u,  p,w )
+rhs = swe.form_mass( globe, hn,un, p,w ) + exp_weight*swe.form_function( globe, g,H,f, hn,un, p,w )
 
 equation = lhs - rhs
 
@@ -175,7 +136,7 @@ while t<tmax:
     timestep+=1
 
     if timestep%out_freq==0 :
-        print( "saving solution at timestep ", timestep, " and time: ", t/hour, " hours" )
+        print( "saving solution at timestep ", timestep, " and time: ", t/units.hour, " hours" )
         u_out.assign(un)
         h_out.assign(hn)
         outfile.write( u_out, h_out )
