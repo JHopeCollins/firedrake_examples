@@ -17,7 +17,7 @@ gh0 = case2.gh0
 delta_t = 20*units.minute  # implicit timestep size
 tmax = 1*units.hour        # simulation time
 theta = 0.0                # implicit theta-method ( 0: backward Euler, 0.5: trapezium )
-out_freq = 1               # number of delta_ts between snapshots
+out_freq = 2               # number of delta_ts between snapshots
 
 # mesh refinement
 refinement_level = 3
@@ -46,8 +46,7 @@ globe = earth.IcosahedralMesh(
             refinement_level = refinement_level,
             degree = mesh_degree )
 
-x,y,z = fd.SpatialCoordinate( globe )
-
+coords = fd.SpatialCoordinate( globe )
 
 ### === --- function spaces --- === ###
 
@@ -64,18 +63,22 @@ Vf = fd.FunctionSpace( globe, "CG", mesh_degree )
 
 # steady-state geostrophic balance solution to nonlinear SWE
 
-f = case2.coriolis_function(      x,y,z, Vf )
-uexact = case2.velocity_function( x,y,z, V1 )
-hexact = case2.depth_function(    x,y,z, V2 )
+f = case2.coriolis_function(      *coords, Vf )
+uexact = case2.velocity_function( *coords, V1 )
+hexact = case2.depth_function(    *coords, V2 )
 
-fd.File( "williamson2.exact.pvd" ).write( uexact, hexact )
+fd.File( "vtk/williamson2.exact.pvd" ).write( uexact, hexact )
 
 
 ### === --- full equations --- === ###
 
+# solution at current timestep
+wn = fd.Function(W)
+un, hn = wn.split()
+
 # use exact profiles as initial conditions
-un = fd.Function(V1).assign(uexact)
-hn = fd.Function(V2).assign(hexact)
+un.assign(uexact)
+hn.assign(hexact)
 
 # residual weights for theta method
 imp_weight = fd.Constant( (1-theta)*dt )
@@ -86,7 +89,7 @@ w,p = fd.TestFunctions(  W )
 
 # forms for next (lhs) and current (rhs) timesteps
 lhs = swe.form_mass( globe, h, u,  p,w ) + imp_weight*swe.form_function( globe, g,H,f, h, u,  p,w )
-rhs = swe.form_mass( globe, hn,un, p,w ) + exp_weight*swe.form_function( globe, g,H,f, hn,un, p,w )
+rhs = swe.form_mass( globe, hn,un, p,w ) - exp_weight*swe.form_function( globe, g,H,f, hn,un, p,w )
 
 equation = lhs - rhs
 
@@ -117,7 +120,7 @@ solver = fd.LinearVariationalSolver( problem, solver_parameters = params )
 u_out = fd.Function( V1, name="velocity" ).assign(un)
 h_out = fd.Function( V2, name="depth"    ).assign(hn)
 
-outfile = fd.File( "williamson2.pvd" )
+outfile = fd.File( "vtk/williamson2.pvd" )
 outfile.write( u_out, h_out )
 
 
@@ -144,7 +147,9 @@ while t<tmax:
 
 ### === --- finish up --- === ###
 
-u_out.assign(un)
-h_out.assign(hn)
-outfile.write( u_out, h_out )
+# write final timestep if not already done
+if timestep%out_freq!=0:
+    u_out.assign(un)
+    h_out.assign(hn)
+    outfile.write( u_out, h_out )
 
