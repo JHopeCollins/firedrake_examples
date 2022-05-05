@@ -4,8 +4,8 @@ import firedrake as fd
 from firedrake_utils import units
 from firedrake_utils.planets import earth
 
-import firedrake_utils.shallow_water.linear as swe
-from firedrake_utils.shallow_water.williamson1992 import case2
+import firedrake_utils.shallow_water as swe
+from   firedrake_utils.shallow_water.williamson1992 import case2
 
 
 ### === --- inputs --- === ###
@@ -20,7 +20,7 @@ theta = 0.0                # implicit theta-method ( 0: backward Euler, 0.5: tra
 out_freq = 2               # number of delta_ts between snapshots
 
 # mesh refinement
-refinement_level = 3
+refinement_level = 2
 
 # function space degrees
 element_degree = 2
@@ -88,8 +88,8 @@ u,h = fd.TrialFunctions( W )
 w,p = fd.TestFunctions(  W )
 
 # forms for next (lhs) and current (rhs) timesteps
-lhs = swe.form_mass( globe, h, u,  p,w ) + imp_weight*swe.form_function( globe, g,H,f, h, u,  p,w )
-rhs = swe.form_mass( globe, hn,un, p,w ) - exp_weight*swe.form_function( globe, g,H,f, hn,un, p,w )
+lhs = swe.linear.form_mass( globe, h, u,  p,w ) + imp_weight*swe.linear.form_function( globe, g,H,f, h, u,  p,w )
+rhs = swe.linear.form_mass( globe, hn,un, p,w ) - exp_weight*swe.linear.form_function( globe, g,H,f, hn,un, p,w )
 
 equation = lhs - rhs
 
