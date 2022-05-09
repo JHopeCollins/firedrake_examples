@@ -30,7 +30,6 @@ if args.show_args:
 # some domain, parameters and FS setup
 R0 = earth.radius
 H = case5.H0
-name = args.filename
 
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 
@@ -49,43 +48,10 @@ V2 = fd.FunctionSpace(mesh, "DG", args.degree)
 V0 = fd.FunctionSpace(mesh, "CG", args.degree+2)
 W = fd.MixedFunctionSpace((V1, V2))
 
-f = case5.coriolis_expression(x,y,z)
-g = earth.Gravity
-
-# Topography.
-b = case5.topography_function(x, y, z, V2, name="Topography")
-
-n = fd.FacetNormal(mesh)
-
 outward_normals = fd.CellNormal(mesh)
 
 def perp(u):
     return fd.cross(outward_normals, u)
-
-
-def both(u):
-    return 2*fd.avg(u)
-
-
-dT = fd.Constant(0.)
-
-
-def u_op(v, u, h):
-    Upwind = 0.5 * (fd.sign(fd.dot(u, n)) + 1)
-    K = 0.5*fd.inner(u, u)
-    return (fd.inner(v, f*perp(u))*fd.dx
-            - fd.inner(perp(fd.grad(fd.inner(v, perp(u)))), u)*fd.dx
-            + fd.inner(both(perp(n)*fd.inner(v, perp(u))),
-                          both(Upwind*u))*fd.dS
-            - fd.div(v)*(g*(h + b) + K)*fd.dx)
-
-
-def h_op(phi, u, h):
-    uup = 0.5 * (fd.dot(u, n) + abs(fd.dot(u, n)))
-    return (- fd.inner(fd.grad(phi), u)*h*fd.dx
-            + fd.jump(phi)*(uup('+')*h('+')
-                            - uup('-')*h('-'))*fd.dS)
-
 
 # U_t + N(U) = 0
 #
@@ -99,6 +65,10 @@ def h_op(phi, u, h):
 # Df(x^k).xp = -f(x^k)
 # x^{k+1} = x^k + xp.
 
+f = case5.coriolis_expression(x,y,z)
+b = case5.topography_function(x, y, z, V2, name="Topography")
+g = earth.Gravity
+
 Un = fd.Function(W)
 Unp1 = fd.Function(W)
 
@@ -106,19 +76,15 @@ v, phi = fd.TestFunctions(W)
 
 u0, h0 = fd.split(Un)
 u1, h1 = fd.split(Unp1)
-half = fd.Constant(0.5)
 
-testeqn = (
+half = fd.Constant(0.5)
+dT = fd.Constant(0.)
+
+equation = (
     swe.form_mass(mesh, h1-h0, u1-u0, phi, v)
     + half*dT*swe.form_function(mesh, g, b, f, h0, u0, phi, v)
     + half*dT*swe.form_function(mesh, g, b, f, h1, u1, phi, v))
 
-# the extra bit
-eqn = testeqn \
-    + fd.Constant(0)*(fd.div(v)*(h1 - h0)*fd.dx
-                      + half*dT*h_op(fd.div(v), u0, h0)
-                      + half*dT*h_op(fd.div(v), u1, h1))
-    
 # monolithic solver options
 
 sparameters = {
@@ -159,7 +125,7 @@ dt = 60*60*args.dt
 dT.assign(dt)
 t = 0.
 
-nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
+nprob = fd.NonlinearVariationalProblem(equation, Unp1)
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         solver_parameters=sparameters,
                                         appctx={})
@@ -191,7 +157,7 @@ qparams = {'ksp_type':'cg'}
 qsolver = fd.LinearVariationalSolver(vprob,
                                      solver_parameters=qparams)
 
-file_sw = fd.File('output/'+name+'.pvd')
+file_sw = fd.File('output/'+args.filename+'.pvd')
 
 
 def write_file():
@@ -214,11 +180,11 @@ while t < tmax + 0.5*dt:
     tdump += dt
 
     nsolver.solve()
-    res = fd.assemble(testeqn)
+    res = fd.assemble(equation)
     PETSc.Sys.Print(res.dat.data[0].max(), res.dat.data[0].min(),
           res.dat.data[1].max(), res.dat.data[1].min())
     Un.assign(Unp1)
-    res = fd.assemble(testeqn)
+    res = fd.assemble(equation)
     PETSc.Sys.Print(res.dat.data[0].max(), res.dat.data[0].min(),
           res.dat.data[1].max(), res.dat.data[1].min())
     
