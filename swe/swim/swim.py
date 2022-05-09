@@ -12,14 +12,13 @@ import argparse
 parser = argparse.ArgumentParser(description='Williamson 5 testcase for augmented Lagrangian solver.')
 parser.add_argument('--base_level', type=int, default=1, help='Base refinement level of icosahedral grid for MG solve. Default 1.')
 parser.add_argument('--ref_level', type=int, default=2, help='Refinement level of icosahedral grid. Default 2.')
-parser.add_argument('--dmax', type=float, default=0.125, help='Final time in days. Default 0.125.')
+parser.add_argument('--dmax', type=float, default=1, help='Final time in days. Default 1.')
 parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours. Default 24.')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
 parser.add_argument('--filename', type=str, default='w5aug')
 parser.add_argument('--coords_degree', type=int, default=3, help='Degree of polynomials for sphere mesh approximation.')
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
 parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
-parser.add_argument('--time_scheme', type=int, default=0, help='Timestepping scheme. 0=Crank-Nicholson. 1=Implicit midpoint rule.')
 
 args = parser.parse_known_args()
 args = args[0]
@@ -47,11 +46,6 @@ V1 = fd.FunctionSpace(mesh, "BDM", args.degree+1)
 V2 = fd.FunctionSpace(mesh, "DG", args.degree)
 V0 = fd.FunctionSpace(mesh, "CG", args.degree+2)
 W = fd.MixedFunctionSpace((V1, V2))
-
-outward_normals = fd.CellNormal(mesh)
-
-def perp(u):
-    return fd.cross(outward_normals, u)
 
 # U_t + N(U) = 0
 #
@@ -147,10 +141,15 @@ u0, h0 = Un.split()
 u0.assign(un)
 h0.assign(etan + H - b)
 
+qn = fd.Function(V0, name="Relative Vorticity")
+
+outward_normals = fd.CellNormal(mesh)
+def perp(u):
+    return fd.cross(outward_normals, u)
+
 q = fd.TrialFunction(V0)
 p = fd.TestFunction(V0)
 
-qn = fd.Function(V0, name="Relative Vorticity")
 veqn = q*p*fd.dx + fd.inner(perp(fd.grad(p)), un)*fd.dx
 vprob = fd.LinearVariationalProblem(fd.lhs(veqn), fd.rhs(veqn), qn)
 qparams = {'ksp_type':'cg'}
@@ -175,24 +174,19 @@ PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 itcount = 0
 stepcount = 0
 while t < tmax + 0.5*dt:
-    PETSc.Sys.Print('===--- ', itcount, ' | ', t, ' ---===' )
     t += dt
     tdump += dt
 
     nsolver.solve()
-    res = fd.assemble(equation)
-    PETSc.Sys.Print(res.dat.data[0].max(), res.dat.data[0].min(),
-          res.dat.data[1].max(), res.dat.data[1].min())
     Un.assign(Unp1)
-    res = fd.assemble(equation)
-    PETSc.Sys.Print(res.dat.data[0].max(), res.dat.data[0].min(),
-          res.dat.data[1].max(), res.dat.data[1].min())
     
     if tdump > dumpt - dt*0.5:
+        PETSc.Sys.Print('===--- ', stepcount, ' | ', t/(60*60), ' ---===' )
         write_file()
         tdump -= dumpt
     stepcount += 1
     itcount += nsolver.snes.getLinearSolveIterations()
+
 PETSc.Sys.Print("Iterations", itcount, "its per step", itcount/stepcount,
                 "dt", dt, "ref_level", args.ref_level, "dmax", args.dmax)
 write_file()
