@@ -29,7 +29,6 @@ if args.show_args:
 
 # some domain, parameters and FS setup
 R0 = earth.radius
-#H = fd.Constant(5960.)
 H = case5.H0
 name = args.filename
 
@@ -50,17 +49,15 @@ def perp(u):
     return fd.cross(outward_normals, u)
 
 
-degree = args.degree
-V1 = fd.FunctionSpace(mesh, "BDM", degree+1)
-V2 = fd.FunctionSpace(mesh, "DG", degree)
-V0 = fd.FunctionSpace(mesh, "CG", degree+2)
+V1 = fd.FunctionSpace(mesh, "BDM", args.degree+1)
+V2 = fd.FunctionSpace(mesh, "DG", args.degree)
+V0 = fd.FunctionSpace(mesh, "CG", args.degree+2)
 W = fd.MixedFunctionSpace((V1, V2))
 
 u, eta = fd.TrialFunctions(W)
 v, phi = fd.TestFunctions(W)
 
-Omega = earth.Omega
-f = 2*Omega*z/fd.Constant(R0)  # Coriolis parameter
+f = case5.coriolis_expression(x,y,z)
 g = earth.Gravity
 
 # Topography.
@@ -68,12 +65,8 @@ b = case5.topography_function(x, y, z, V2, name="Topography")
 
 # D = eta + b
 
-One = fd.Function(V2).assign(1.0)
-
 u, eta = fd.TrialFunctions(W)
 v, phi = fd.TestFunctions(W)
-
-dx = fd.dx
 
 Un = fd.Function(W)
 Unp1 = fd.Function(W)
@@ -88,42 +81,41 @@ def both(u):
 
 
 dT = fd.Constant(0.)
-dS = fd.dS
 
 
 def u_op(v, u, h):
     Upwind = 0.5 * (fd.sign(fd.dot(u, n)) + 1)
     K = 0.5*fd.inner(u, u)
-    return (fd.inner(v, f*perp(u))*dx
-            - fd.inner(perp(fd.grad(fd.inner(v, perp(u)))), u)*dx
+    return (fd.inner(v, f*perp(u))*fd.dx
+            - fd.inner(perp(fd.grad(fd.inner(v, perp(u)))), u)*fd.dx
             + fd.inner(both(perp(n)*fd.inner(v, perp(u))),
-                          both(Upwind*u))*dS
-            - fd.div(v)*(g*(h + b) + K)*dx)
+                          both(Upwind*u))*fd.dS
+            - fd.div(v)*(g*(h + b) + K)*fd.dx)
 
 
 def h_op(phi, u, h):
     uup = 0.5 * (fd.dot(u, n) + abs(fd.dot(u, n)))
-    return (- fd.inner(fd.grad(phi), u)*h*dx
+    return (- fd.inner(fd.grad(phi), u)*h*fd.dx
             + fd.jump(phi)*(uup('+')*h('+')
-                            - uup('-')*h('-'))*dS)
+                            - uup('-')*h('-'))*fd.dS)
 
 
 "Crank-Nicholson rule"
 half = fd.Constant(0.5)
 
 # augmented lagrangian parameter - to be removed
-gamma = 0
-gamma = fd.Constant(gamma)
+gamma = fd.Constant(0)
+
 testeqn = (
-    fd.inner(v, u1 - u0)*dx
+    fd.inner(v, u1 - u0)*fd.dx
     + half*dT*u_op(v, u0, h0)
     + half*dT*u_op(v, u1, h1)
-    + phi*(h1 - h0)*dx
+    + phi*(h1 - h0)*fd.dx
     + half*dT*h_op(phi, u0, h0)
     + half*dT*h_op(phi, u1, h1))
 # the extra bit
 eqn = testeqn \
-    + gamma*(fd.div(v)*(h1 - h0)*dx
+    + gamma*(fd.div(v)*(h1 - h0)*fd.dx
              + half*dT*h_op(fd.div(v), u0, h0)
              + half*dT*h_op(fd.div(v), u1, h1))
     
@@ -204,17 +196,24 @@ q = fd.TrialFunction(V0)
 p = fd.TestFunction(V0)
 
 qn = fd.Function(V0, name="Relative Vorticity")
-veqn = q*p*dx + fd.inner(perp(fd.grad(p)), un)*dx
+veqn = q*p*fd.dx + fd.inner(perp(fd.grad(p)), un)*fd.dx
 vprob = fd.LinearVariationalProblem(fd.lhs(veqn), fd.rhs(veqn), qn)
 qparams = {'ksp_type':'cg'}
 qsolver = fd.LinearVariationalSolver(vprob,
                                      solver_parameters=qparams)
 
 file_sw = fd.File('output/'+name+'.pvd')
-etan.assign(h0 - H + b)
-un.assign(u0)
-qsolver.solve()
-file_sw.write(un, etan, qn)
+
+
+def write_file():
+    etan.assign(h0 - H + b)
+    un.assign(u0)
+    qsolver.solve()
+    file_sw.write(un, etan, qn)
+
+
+write_file()
+
 Unp1.assign(Un)
 
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
@@ -235,16 +234,10 @@ while t < tmax + 0.5*dt:
           res.dat.data[1].max(), res.dat.data[1].min())
     
     if tdump > dumpt - dt*0.5:
-        etan.assign(h0 - H + b)
-        un.assign(u0)
-        qsolver.solve()
-        file_sw.write(un, etan, qn)
+        write_file()
         tdump -= dumpt
     stepcount += 1
     itcount += nsolver.snes.getLinearSolveIterations()
 PETSc.Sys.Print("Iterations", itcount, "its per step", itcount/stepcount,
                 "dt", dt, "ref_level", args.ref_level, "dmax", args.dmax)
-etan.assign(h0 - H + b)
-un.assign(u0)
-qsolver.solve()
-file_sw.write(un, etan, qn)
+write_file()
