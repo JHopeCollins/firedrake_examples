@@ -43,7 +43,6 @@ mesh = mg.icosahedral_mesh(R0=R0,
 R0 = fd.Constant(R0)
 x,y,z = fd.SpatialCoordinate(mesh)
 
-outward_normals = fd.CellNormal(mesh)
 
 V1 = fd.FunctionSpace(mesh, "BDM", args.degree+1)
 V2 = fd.FunctionSpace(mesh, "DG", args.degree)
@@ -56,11 +55,9 @@ g = earth.Gravity
 # Topography.
 b = case5.topography_function(x, y, z, V2, name="Topography")
 
-# D = eta + b
-
-
 n = fd.FacetNormal(mesh)
 
+outward_normals = fd.CellNormal(mesh)
 
 def perp(u):
     return fd.cross(outward_normals, u)
@@ -111,21 +108,16 @@ u0, h0 = fd.split(Un)
 u1, h1 = fd.split(Unp1)
 half = fd.Constant(0.5)
 
-# augmented lagrangian parameter - to be removed
-gamma = fd.Constant(0)
-
 testeqn = (
-    fd.inner(v, u1 - u0)*fd.dx
-    + half*dT*u_op(v, u0, h0)
-    + half*dT*u_op(v, u1, h1)
-    + phi*(h1 - h0)*fd.dx
-    + half*dT*h_op(phi, u0, h0)
-    + half*dT*h_op(phi, u1, h1))
+    swe.form_mass(mesh, h1-h0, u1-u0, phi, v)
+    + half*dT*swe.form_function(mesh, g, b, f, h0, u0, phi, v)
+    + half*dT*swe.form_function(mesh, g, b, f, h1, u1, phi, v))
+
 # the extra bit
 eqn = testeqn \
-    + gamma*(fd.div(v)*(h1 - h0)*fd.dx
-             + half*dT*h_op(fd.div(v), u0, h0)
-             + half*dT*h_op(fd.div(v), u1, h1))
+    + fd.Constant(0)*(fd.div(v)*(h1 - h0)*fd.dx
+                      + half*dT*h_op(fd.div(v), u0, h0)
+                      + half*dT*h_op(fd.div(v), u1, h1))
     
 # monolithic solver options
 
