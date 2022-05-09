@@ -2,6 +2,7 @@ import firedrake as fd
 import firedrake_utils as fdutils
 from firedrake_utils.planets import earth
 from firedrake_utils.shallow_water.williamson1992 import case5
+from firedrake_utils.shallow_water.williamson1992 import case2
 
 #get command arguments
 from petsc4py import PETSc
@@ -60,7 +61,7 @@ v, phi = fd.TestFunctions(W)
 
 Omega = earth.Omega
 f = 2*Omega*z/fd.Constant(R0)  # Coriolis parameter
-g = fd.Constant(9.8)  # Gravitational constant
+g = earth.Gravity
 
 # Topography.
 b = case5.topography_function(x, y, z, V2, name="Topography")
@@ -192,11 +193,8 @@ hdump = args.dumpt
 dumpt = hdump*60.*60.
 tdump = 0.
 
-u_max = case5.U0
 un = case5.velocity_function(x, y, z, V1, name="Velocity")
-
-eta_expr = - ((R0 * Omega * u_max + u_max*u_max/2.0)*(z*z/(R0*R0)))/g
-etan = fd.Function(V2, name="Elevation").project(eta_expr)
+etan = case5.elevation_function(x, y, z, V2, name="Elevation")
 
 u0, h0 = Un.split()
 u0.assign(un)
