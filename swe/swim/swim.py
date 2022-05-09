@@ -1,5 +1,7 @@
 import firedrake as fd
 import firedrake_utils as fdutils
+from firedrake_utils.planets import earth
+from firedrake_utils.shallow_water.williamson1992 import case5
 
 #get command arguments
 from petsc4py import PETSc
@@ -25,8 +27,9 @@ if args.show_args:
     PETSc.Sys.Print(args)
 
 # some domain, parameters and FS setup
-R0 = 6371220.
-H = fd.Constant(5960.)
+R0 = earth.radius
+#H = fd.Constant(5960.)
+H = case5.H0
 name = args.filename
 
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
@@ -42,7 +45,6 @@ cx, cy, cz = fd.SpatialCoordinate(mesh)
 
 outward_normals = fd.CellNormal(mesh)
 
-
 def perp(u):
     return fd.cross(outward_normals, u)
 
@@ -56,7 +58,7 @@ W = fd.MixedFunctionSpace((V1, V2))
 u, eta = fd.TrialFunctions(W)
 v, phi = fd.TestFunctions(W)
 
-Omega = fd.Constant(7.292e-5)  # rotation rate
+Omega = earth.Omega
 f = 2*Omega*cz/fd.Constant(R0)  # Coriolis parameter
 g = fd.Constant(9.8)  # Gravitational constant
 b = fd.Function(V2, name="Topography")
@@ -190,19 +192,19 @@ hdump = args.dumpt
 dumpt = hdump*60.*60.
 tdump = 0.
 
-x = fd.SpatialCoordinate(mesh)
-u_0 = 20.0  # maximum amplitude of the zonal wind [m/s]
-u_max = fd.Constant(u_0)
-u_expr = fd.as_vector([-u_max*x[1]/R0, u_max*x[0]/R0, 0.0])
-eta_expr = - ((R0 * Omega * u_max + u_max*u_max/2.0)*(x[2]*x[2]/(R0*R0)))/g
-un = fd.Function(V1, name="Velocity").project(u_expr)
+x,y,z = fd.SpatialCoordinate(mesh)
+
+u_max = case5.U0
+un = case5.velocity_function(x, y, z, V1, name="Velocity")
+
+eta_expr = - ((R0 * Omega * u_max + u_max*u_max/2.0)*(z*z/(R0*R0)))/g
 etan = fd.Function(V2, name="Elevation").project(eta_expr)
 
 # Topography.
 rl = fd.pi/9.0
-lambda_x = fd.atan_2(x[1]/R0, x[0]/R0)
+lambda_x = fd.atan_2(y/R0, x/R0)
 lambda_c = -fd.pi/2.0
-phi_x = fd.asin(x[2]/R0)
+phi_x = fd.asin(z/R0)
 phi_c = fd.pi/6.0
 minarg = fd.Min(pow(rl, 2),
                 pow(phi_x - phi_c, 2) + pow(lambda_x - lambda_c, 2))
