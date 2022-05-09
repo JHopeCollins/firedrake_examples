@@ -41,7 +41,7 @@ mesh = fdutils.mg.icosahedral_mesh(R0=R0,
                                    nrefs=args.ref_level-args.base_level)
 
 R0 = fd.Constant(R0)
-cx, cy, cz = fd.SpatialCoordinate(mesh)
+x,y,z = fd.SpatialCoordinate(mesh)
 
 outward_normals = fd.CellNormal(mesh)
 
@@ -59,11 +59,11 @@ u, eta = fd.TrialFunctions(W)
 v, phi = fd.TestFunctions(W)
 
 Omega = earth.Omega
-f = 2*Omega*cz/fd.Constant(R0)  # Coriolis parameter
+f = 2*Omega*z/fd.Constant(R0)  # Coriolis parameter
 g = fd.Constant(9.8)  # Gravitational constant
-b = fd.Function(V2, name="Topography")
-c = fd.sqrt(g*H)
 
+# Topography.
+b = case5.topography_function(x, y, z, V2, name="Topography")
 
 # D = eta + b
 
@@ -192,24 +192,11 @@ hdump = args.dumpt
 dumpt = hdump*60.*60.
 tdump = 0.
 
-x,y,z = fd.SpatialCoordinate(mesh)
-
 u_max = case5.U0
 un = case5.velocity_function(x, y, z, V1, name="Velocity")
 
 eta_expr = - ((R0 * Omega * u_max + u_max*u_max/2.0)*(z*z/(R0*R0)))/g
 etan = fd.Function(V2, name="Elevation").project(eta_expr)
-
-# Topography.
-rl = fd.pi/9.0
-lambda_x = fd.atan_2(y/R0, x/R0)
-lambda_c = -fd.pi/2.0
-phi_x = fd.asin(z/R0)
-phi_c = fd.pi/6.0
-minarg = fd.Min(pow(rl, 2),
-                pow(phi_x - phi_c, 2) + pow(lambda_x - lambda_c, 2))
-bexpr = 2000.0*(1 - fd.sqrt(minarg)/rl)
-b.interpolate(bexpr)
 
 u0, h0 = Un.split()
 u0.assign(un)
