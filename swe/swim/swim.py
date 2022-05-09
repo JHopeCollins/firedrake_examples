@@ -1,4 +1,6 @@
 import firedrake as fd
+import firedrake_utils as fdutils
+
 #get command arguments
 from petsc4py import PETSc
 PETSc.Sys.popErrorHandler()
@@ -204,19 +206,11 @@ dT.assign(dt)
 t = 0.
 
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
-ctx = {}
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         solver_parameters=sparameters,
-                                        appctx=ctx)
-vtransfer = mg.ManifoldTransfer()
-tm = fd.TransferManager()
-transfers = {
-    V1.ufl_element(): (vtransfer.prolong, vtransfer.restrict,
-                       vtransfer.inject),
-    V2.ufl_element(): (vtransfer.prolong, vtransfer.restrict,
-                       vtransfer.inject)
-}
-transfermanager = fd.TransferManager(native_transfers=transfers)
+                                        appctx={})
+
+transfermanager = fdutils.mg.manifold_transfer_manager(W)
 nsolver.set_transfer_manager(transfermanager)
 
 dmax = args.dmax
