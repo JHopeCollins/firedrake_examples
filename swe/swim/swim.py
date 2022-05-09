@@ -1,13 +1,13 @@
 import firedrake as fd
-import firedrake_utils as fdutils
+
+import firedrake_utils.mg as mg
 from firedrake_utils.planets import earth
+import firedrake_utils.shallow_water.nonlinear as swe
 from firedrake_utils.shallow_water.williamson1992 import case5
-from firedrake_utils.shallow_water.williamson1992 import case2
 
 #get command arguments
 from petsc4py import PETSc
 PETSc.Sys.popErrorHandler()
-import mg
 import argparse
 parser = argparse.ArgumentParser(description='Williamson 5 testcase for augmented Lagrangian solver.')
 parser.add_argument('--base_level', type=int, default=1, help='Base refinement level of icosahedral grid for MG solve. Default 1.')
@@ -34,28 +34,21 @@ name = args.filename
 
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 
-mesh = fdutils.mg.icosahedral_mesh(R0=R0,
-                                   base_level=args.base_level,
-                                   degree=args.coords_degree,
-                                   distribution_parameters=distribution_parameters,
-                                   nrefs=args.ref_level-args.base_level)
+mesh = mg.icosahedral_mesh(R0=R0,
+                           base_level=args.base_level,
+                           degree=args.coords_degree,
+                           distribution_parameters=distribution_parameters,
+                           nrefs=args.ref_level-args.base_level)
 
 R0 = fd.Constant(R0)
 x,y,z = fd.SpatialCoordinate(mesh)
 
 outward_normals = fd.CellNormal(mesh)
 
-def perp(u):
-    return fd.cross(outward_normals, u)
-
-
 V1 = fd.FunctionSpace(mesh, "BDM", args.degree+1)
 V2 = fd.FunctionSpace(mesh, "DG", args.degree)
 V0 = fd.FunctionSpace(mesh, "CG", args.degree+2)
 W = fd.MixedFunctionSpace((V1, V2))
-
-u, eta = fd.TrialFunctions(W)
-v, phi = fd.TestFunctions(W)
 
 f = case5.coriolis_expression(x,y,z)
 g = earth.Gravity
@@ -65,15 +58,12 @@ b = case5.topography_function(x, y, z, V2, name="Topography")
 
 # D = eta + b
 
-u, eta = fd.TrialFunctions(W)
-v, phi = fd.TestFunctions(W)
 
-Un = fd.Function(W)
-Unp1 = fd.Function(W)
-
-u0, h0 = fd.split(Un)
-u1, h1 = fd.split(Unp1)
 n = fd.FacetNormal(mesh)
+
+
+def perp(u):
+    return fd.cross(outward_normals, u)
 
 
 def both(u):
@@ -100,7 +90,25 @@ def h_op(phi, u, h):
                             - uup('-')*h('-'))*fd.dS)
 
 
-"Crank-Nicholson rule"
+# U_t + N(U) = 0
+#
+# TRAPEZOIDAL RULE
+# U^{n+1} - U^n + dt*( N(U^{n+1}) + N(U^n) )/2 = 0.
+    
+# Newton's method
+# f(x) = 0, f:R^M -> R^M
+# [Df(x)]_{i,j} = df_i/dx_j
+# x^0, x^1, ...
+# Df(x^k).xp = -f(x^k)
+# x^{k+1} = x^k + xp.
+
+Un = fd.Function(W)
+Unp1 = fd.Function(W)
+
+v, phi = fd.TestFunctions(W)
+
+u0, h0 = fd.split(Un)
+u1, h1 = fd.split(Unp1)
 half = fd.Constant(0.5)
 
 # augmented lagrangian parameter - to be removed
@@ -119,17 +127,6 @@ eqn = testeqn \
              + half*dT*h_op(fd.div(v), u0, h0)
              + half*dT*h_op(fd.div(v), u1, h1))
     
-# U_t + N(U) = 0
-# TRAPEZOIDAL RULE
-# U^{n+1} - U^n + dt*( N(U^{n+1}) + N(U^n) )/2 = 0.
-    
-# Newton's method
-# f(x) = 0, f:R^M -> R^M
-# [Df(x)]_{i,j} = df_i/dx_j
-# x^0, x^1, ...
-# Df(x^k).xp = -f(x^k)
-# x^{k+1} = x^k + xp.
-
 # monolithic solver options
 
 sparameters = {
@@ -175,7 +172,7 @@ nsolver = fd.NonlinearVariationalSolver(nprob,
                                         solver_parameters=sparameters,
                                         appctx={})
 
-transfermanager = fdutils.mg.manifold_transfer_manager(W)
+transfermanager = mg.manifold_transfer_manager(W)
 nsolver.set_transfer_manager(transfermanager)
 
 dmax = args.dmax
