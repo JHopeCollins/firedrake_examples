@@ -1,0 +1,38 @@
+tmax 10800.0 dt 3600
+===---  0  |  0.0  ---===
+  0 SNES Function norm 1.091291521611e+14 
+  Linear firedrake_0_ solve converged due to CONVERGED_RTOL iterations 4
+  1 SNES Function norm 2.507284748618e+11 
+  Linear firedrake_0_ solve converged due to CONVERGED_RTOL iterations 4
+  2 SNES Function norm 1.837042326111e+06 
+  Linear firedrake_0_ solve converged due to CONVERGED_RTOL iterations 4
+  3 SNES Function norm 4.447850089375e+00 
+8.476781658828259e-07 -5.886329290660797e-07 0.34375 -0.5
+270504.49248881475 -567397.8509799538 365543870918.84375 -10840497472498.812
+===---  12  |  3600.0  ---===
+  0 SNES Function norm 4.666459059644e+13 
+  Linear firedrake_0_ solve converged due to CONVERGED_RTOL iterations 4
+  1 SNES Function norm 1.084932028337e+11 
+  Linear firedrake_0_ solve converged due to CONVERGED_RTOL iterations 4
+  2 SNES Function norm 8.842687496498e+05 
+  Linear firedrake_0_ solve converged due to CONVERGED_RTOL iterations 4
+  3 SNES Function norm 4.475723831824e+00 
+6.834423516011157e-07 -6.487971404567361e-07 0.46875 -0.484375
+881099.0234963555 -1230277.4855482979 290735003136.65625 -9647096242712.922
+===---  24  |  7200.0  ---===
+  0 SNES Function norm 6.160369357965e+13 
+  Linear firedrake_0_ solve converged due to CONVERGED_RTOL iterations 4
+  1 SNES Function norm 7.764706957489e+10 
+  Linear firedrake_0_ solve converged due to CONVERGED_RTOL iterations 4
+  2 SNES Function norm 3.120032589148e+05 
+0.000711795873939991 -0.0008725139778107405 8378.3125 -17257.0
+766439.0092022376 -947269.870874766 9727625015174.188 -7760714575813.375
+===---  32  |  10800.0  ---===
+  0 SNES Function norm 5.625390863185e+13 
+  Linear firedrake_0_ solve converged due to CONVERGED_RTOL iterations 4
+  1 SNES Function norm 7.067523668936e+10 
+  Linear firedrake_0_ solve converged due to CONVERGED_RTOL iterations 4
+  2 SNES Function norm 1.896593603308e+05 
+0.0017314616707153618 -0.0022867631632834673 22781.875 -30874.0
+1072143.993715192 -678022.4020801075 10054741846182.895 -6680106459476.1875
+Iterations 40 its per step 10.0 dt 3600 tlblock mg ref_level 2 dmax 0.125
