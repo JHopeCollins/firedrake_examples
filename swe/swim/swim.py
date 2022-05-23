@@ -86,7 +86,7 @@ sparameters = {
     "mat_type": "matfree",
     "ksp_type": "fgmres",
     #"ksp_monitor_true_residual": None,
-    "ksp_converged_reason": None,
+    # "ksp_converged_reason": None,
     "ksp_atol": 1e-8,
     "ksp_rtol": 1e-8,
     "ksp_max_it": 400,
@@ -166,6 +166,14 @@ def write_file():
     file_sw.write(un, etan, qn)
 
 
+def cfl( grid, q ):
+    u, h = q.split()
+    c = fd.sqrt(g*h)
+    # return fd.assemble( (fd.inner(u,u)*fd.CellSize(grid))*fd.dx )
+    dx = fd.Function( fd.FunctionSpace("DG", 1) ).interpolate(fd.CellSize)
+    return dx
+
+
 write_file()
 
 Unp1.assign(Un)
@@ -179,6 +187,9 @@ while t < tmax + 0.5*dt:
 
     nsolver.solve()
     Un.assign(Unp1)
+
+    sigma = cfl(mesh, Un)
+    PETSc.Sys.Print( 'CFL_c =', sigma )
     
     if tdump > dumpt - dt*0.5:
         PETSc.Sys.Print('===--- ', stepcount, ' | ', t/(60*60), ' ---===' )
