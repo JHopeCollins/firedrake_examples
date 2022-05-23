@@ -1,5 +1,9 @@
 *.pvd
+*.pvtu
 *.vtu
 *.out
 *.swp
 *.mp4
+*__pycache__*
+*/output/*
+*.out
