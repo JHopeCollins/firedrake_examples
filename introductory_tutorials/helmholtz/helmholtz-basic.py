@@ -1,4 +1,5 @@
 
+from math import log
 import numpy as np
 import firedrake as fd
 
@@ -6,26 +7,28 @@ import firedrake as fd
 nx=10
 ny=10
 
-mesh = fd.UnitSquareMesh( nx,ny )
+mesh = fd.UnitSquareMesh( nx,ny, quadrilateral=True )
 x,y = fd.SpatialCoordinate( mesh )
 
 # function space for solution
 # CG: continuous galerkin
-V = fd.FunctionSpace( mesh, "CG", 1 )
+Vs = (fd.FunctionSpace(mesh, "Q", i) for i in range(1,5))
+V = fd.FunctionSpace( mesh, "CG", 3 )
 
 # test and trial functions
-u = fd.TrialFunction(V)
-v = fd.TestFunction(V)
+us = (fd.TrialFunction(W) for W in Vs)
+vs = (fd.TestFunction(W) for W in Vs)
 
 # right hand side function
-f = fd.Function(V)
-
-f.interpolate( (1+8*fd.pi*fd.pi)*fd.cos(x*fd.pi*2)*fd.cos(y*fd.pi*2) )
+f = (1+8*fd.pi*fd.pi)*fd.cos(x*fd.pi*2)*fd.cos(y*fd.pi*2)
 
 # bilinear and linear forms for left and right hand sides
 
 a = ( fd.inner( fd.grad(u), fd.grad(v) ) + fd.inner( u,v ) )*fd.dx
 L = fd.inner( f, v )*fd.dx
+
+As = (( fd.inner( fd.grad(u), fd.grad(v) ) + fd.inner( u,v ) )*fd.dx for u,v in us,vs)
+Ls = (fd.inner( f, v )*fd.dx for v in vs)
 
 # redefine u as function in V to hold the solution
 u = fd.Function(V)
