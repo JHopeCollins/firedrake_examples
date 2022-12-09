@@ -11,9 +11,9 @@ PETSc.Sys.popErrorHandler()
 import argparse
 parser = argparse.ArgumentParser(description='Williamson 5 testcase for augmented Lagrangian solver.')
 parser.add_argument('--base_level', type=int, default=1, help='Base refinement level of icosahedral grid for MG solve. Default 1.')
-parser.add_argument('--ref_level', type=int, default=2, help='Refinement level of icosahedral grid. Default 2.')
+parser.add_argument('--ref_level', type=int, default=5, help='Refinement level of icosahedral grid. Default 2.')
 parser.add_argument('--dmax', type=float, default=1, help='Final time in days. Default 1.')
-parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours. Default 24.')
+parser.add_argument('--dumpt', type=float, default=1, help='Dump time in hours. Default 24.')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
 parser.add_argument('--filename', type=str, default='w5aug')
 parser.add_argument('--coords_degree', type=int, default=3, help='Degree of polynomials for sphere mesh approximation.')
@@ -83,18 +83,22 @@ equation = (
 
 sparameters = {
     "snes_monitor": None,
+    "snes_converged_reason": None,
+    "snes_atol": 1e-0,
+    "snes_rtol": 1e-12,
+    "snes_stol": 1e-12,
     "mat_type": "matfree",
     "ksp_type": "fgmres",
-    #"ksp_monitor_true_residual": None,
+    "ksp_monitor": None,
     # "ksp_converged_reason": None,
-    "ksp_atol": 1e-8,
-    "ksp_rtol": 1e-8,
+    # "ksp_atol": 1e-8,
+    # "ksp_rtol": 1e-8,
     "ksp_max_it": 400,
     "pc_type": "mg",
     "pc_mg_cycle_type": "v",
     "pc_mg_type": "multiplicative",
     "mg_levels_ksp_type": "gmres",
-    "mg_levels_ksp_max_it": 3,
+    "mg_levels_ksp_max_it": 5,
     #"mg_levels_ksp_convergence_test": "skip",
     "mg_levels_pc_type": "python",
     "mg_levels_pc_python_type": "firedrake.PatchPC",
@@ -166,20 +170,13 @@ def write_file():
     file_sw.write(un, etan, qn)
 
 
-def cfl( grid, q ):
-    u, h = q.split()
-    c = fd.sqrt(g*h)
-    # return fd.assemble( (fd.inner(u,u)*fd.CellSize(grid))*fd.dx )
-    dx = fd.Function( fd.FunctionSpace("DG", 1) ).interpolate(fd.CellSize)
-    return dx
-
-
 write_file()
 
 Unp1.assign(Un)
 
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
-itcount = 0
+linear_itcount = 0
+nonlinear_itcount = 0
 stepcount = 0
 while t < tmax + 0.5*dt:
     t += dt
@@ -188,16 +185,19 @@ while t < tmax + 0.5*dt:
     nsolver.solve()
     Un.assign(Unp1)
 
-    sigma = cfl(mesh, Un)
-    PETSc.Sys.Print( 'CFL_c =', sigma )
-    
     if tdump > dumpt - dt*0.5:
+        PETSc.Sys.Print('')
         PETSc.Sys.Print('===--- ', stepcount, ' | ', t/(60*60), ' ---===' )
+        PETSc.Sys.Print('')
         write_file()
         tdump -= dumpt
     stepcount += 1
-    itcount += nsolver.snes.getLinearSolveIterations()
+    linear_itcount += nsolver.snes.getLinearSolveIterations()
+    nonlinear_itcount += nsolver.snes.getIterationNumber()
 
-PETSc.Sys.Print("Iterations", itcount, "its per step", itcount/stepcount,
-                "dt", dt, "ref_level", args.ref_level, "dmax", args.dmax)
+PETSc.Sys.Print("Linear iterations", linear_itcount)
+PETSc.Sys.Print("Nonlinear iterations (linear solves)", nonlinear_itcount)
+PETSc.Sys.Print("Linear iterations per timestep", linear_itcount/stepcount)
+PETSc.Sys.Print("Nonlinear iterations (linear solves) per timestep", nonlinear_itcount/stepcount)
+PETSc.Sys.Print("stepcount", stepcount, "dt", dt, "ref_level", args.ref_level, "dmax", args.dmax)
 write_file()
