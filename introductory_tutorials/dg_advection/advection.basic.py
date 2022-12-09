@@ -50,7 +50,7 @@ qinitial = fd.Function(V).interpolate( 1.0 + bell( x,y )
                                            + cone( x,y )
                                            + slot( x,y ) )
 
-q = fd.Function(V).assign(qinitial)
+q = fd.Function(V, name="q").assign(qinitial)
 
 # rotating velocity field
 u = fd.Function(W).interpolate(fd.as_vector((0.5-y,x-0.5)))
@@ -63,9 +63,9 @@ q_inflow = fd.Constant(1.0)
 # variational forms
 
 # mass matrix
-dq_trial = fd.TrialFunction(V)
+p = fd.TrialFunction(V)
 phi = fd.TestFunction(V)
-a = phi*dq_trial*fd.dx
+a = phi*p*fd.dx
 
 # right hand side
 
@@ -135,10 +135,36 @@ while t < ( end*T - 0.5*dt ):
 
     if step % output_freq == 0:
         qs.append( q.copy( deepcopy=True ) )
-        #print( "step: ", step, " | t = ", t )
+        print( f"step {step} | t {t}" )
     step += 1
     t += dt
 
+with fd.CheckpointFile('advection.h5', 'w') as cpfile:
+    cpfile.save_mesh(mesh)
+    cpfile.save_function(q)
+
+q.assign(0)
+
+with fd.CheckpointFile('advection.h5', 'r') as cpfile:
+    mesh = cpfile.load_mesh()
+    q.assign(cpfile.load_function(mesh, name="q"))
+
+t = 0.0
+while t < ( end*T - 0.5*dt ):
+    solv1.solve()
+    q1.assign( q + dq )
+
+    solv2.solve()
+    q2.assign( 0.75*q + 0.25*( q1 + dq ) )
+
+    solv3.solve()
+    q.assign( third*q + 2*third*( q2 + dq ) )
+
+    if step % output_freq == 0:
+        qs.append( q.copy( deepcopy=True ) )
+        print( f"step {step} | t {t}" )
+    step += 1
+    t += dt
 
 l2_error = fd.sqrt( fd.assemble( ( q-qinitial )*( q-qinitial )*fd.dx ) )
 l2_init  = fd.sqrt( fd.assemble( (   qinitial )*(   qinitial )*fd.dx ) )
