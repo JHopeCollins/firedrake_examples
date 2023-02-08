@@ -7,6 +7,7 @@ from functools import partial
 
 # asQ utils
 from utils import mg
+from utils import units
 from utils.shallow_water.williamson1992 import case5 as case
 from utils.planets import earth
 from utils.shallow_water import nonlinear as swe
@@ -27,6 +28,7 @@ parser.add_argument('--coords_degree', type=int, default=1, help='Degree of poly
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
 parser.add_argument('--kspschur', type=int, default=40, help='Max number of KSP iterations on the Schur complement.')
 parser.add_argument('--kspmg', type=int, default=3, help='Max number of KSP iterations in the MG levels.')
+parser.add_argument('--patch', type=str, default='star', help='Patch type for MG smoother.')
 parser.add_argument('--tlblock', type=str, default='mg', help='Solver for the velocity-velocity block. mg==Multigrid with patchPC, lu==direct solver with MUMPS, patch==just do a patch smoother.')
 parser.add_argument('--schurpc', type=str, default='mass', help='Preconditioner for the Schur complement. mass==mass inverse, helmholtz==helmholtz inverse * laplace * mass inverse.')
 parser.add_argument('--show_args', action='store_true', default=True, help='Output all the arguments.')
@@ -38,7 +40,6 @@ if args.show_args:
     PETSc.Sys.Print(args)
 
 # some domain, parameters and FS setup
-H = case.H0
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 
 mesh = mg.icosahedral_mesh(earth.radius,
@@ -47,11 +48,6 @@ mesh = mg.icosahedral_mesh(earth.radius,
                            distribution_parameters=distribution_parameters,
                            nrefs=args.ref_level-args.base_level)
 x = fd.SpatialCoordinate(mesh)
-outward_normals = fd.CellNormal(mesh)
-
-
-def perp(u):
-    return fd.cross(outward_normals, u)
 
 
 degree = args.degree
@@ -60,42 +56,32 @@ V2 = fd.FunctionSpace(mesh, "DG", degree)
 V0 = fd.FunctionSpace(mesh, "CG", degree+2)
 W = fd.MixedFunctionSpace((V1, V2))
 
-u, eta = fd.TrialFunctions(W)
-v, phi = fd.TestFunctions(W)
+# case parameters
 
+dt = units.hour*args.dt
+dT = fd.Constant(dt)
+
+H = case.H0
 f = case.coriolis_expression(*x)
 g = earth.Gravity  # Gravitational constant
 
-b = fd.Function(V2, name="Topography")
-b.interpolate(case.topography_expression(*x))
-gamma = fd.Constant(args.gamma)
+b = fd.Function(V2, name="Topography").interpolate(case.topography_expression(*x))
 
-# D = eta + b
-
-One = fd.Function(V2).assign(1.0)
-
-u, eta = fd.TrialFunctions(W)
-v, phi = fd.TestFunctions(W)
-
-dx = fd.dx
+# solution vectors
 
 Un = fd.Function(W)
 Unp1 = fd.Function(W)
 
 u0, h0 = fd.split(Un)
 u1, h1 = fd.split(Unp1)
-n = fd.FacetNormal(mesh)
 
+u, eta = fd.TrialFunctions(W)
+v, phi = fd.TestFunctions(W)
 
-def both(u):
-    return 2*fd.avg(u)
-
-
-dT = fd.Constant(0.)
-dS = fd.dS
-
-
+gamma = fd.Constant(args.gamma)
+One = fd.Function(V2).assign(1.0)
 half = fd.Constant(0.5)
+
 
 def ufunc(v, u, h):
     return swe.form_function_velocity(mesh, g, b, f, u, h, v)
@@ -125,15 +111,12 @@ def heq(phi, u0, u1, h0, h1):
     )
     return form
 
-testeqn = (
+eqn = (
     ueq(v, u0, u1, h0, h1)
     + heq(phi, u0, u1, h0, h1)
+    + gamma*heq(fd.div(v), u0, u1, h0, h1)
 )
 
-aleqn = gamma*heq(fd.div(v), u0, u1, h0, h1)
-
-# the extra bit
-eqn = testeqn + aleqn
 
 class HelmholtzPC(fd.PCBase):
     def initialize(self, pc):
@@ -165,7 +148,7 @@ class HelmholtzPC(fd.PCBase):
                                        mm_solve_parameters)
         # the Helmholtz solve
         eta0 = appctx.get("helmholtz_eta", 20)
-        def get_laplace(q,phi):
+        def get_laplace(q, phi):
             h = fd.avg(fd.CellVolume(mesh))/fd.FacetArea(mesh)
             mu = eta0/h
             n = fd.FacetNormal(mesh)
@@ -228,8 +211,16 @@ sparameters = {
     "ksp_gmres_modifiedgramschmidt": None,
     "pc_type": "fieldsplit",
     "pc_fieldsplit_type": "schur",
-    #"pc_fieldsplit_schur_fact_type": "full",
+    "pc_fieldsplit_schur_fact_type": "full",
     "pc_fieldsplit_off_diag_use_amat": True,
+}
+
+lu_parameters = {
+    "ksp_type": "preonly",
+    "pc_type": "python",
+    "pc_python_type": "firedrake.AssembledPC",
+    "assembled_pc_type": "lu",
+    "assembled_pc_factor_mat_solver_type": "mumps"
 }
 
 bottomright_helm = {
@@ -239,17 +230,13 @@ bottomright_helm = {
     "ksp_max_it": args.kspschur,
     "pc_type": "python",
     "pc_python_type": "__main__.HelmholtzPC",
-    "helmholtz" :
-    {"ksp_type":"preonly",
-     "pc_type": "lu"}
+    "helmholtz" : lu_parameters
 }
 
 bottomright_mass = {
-    "ksp_type": "preonly",
-    #"ksp_monitor":None,
+    "ksp_type": "gmres",
     "ksp_gmres_modifiedgramschmidt": None,
     "ksp_max_it": args.kspschur,
-    #"ksp_monitor":None,
     "pc_type": "python",
     "pc_python_type": "firedrake.MassInvPC",
     "Mp_pc_type": "bjacobi",
@@ -263,87 +250,58 @@ elif args.schurpc == "helmholtz":
 else:
     raise KeyError('Unknown Schur PC option.')
 
-topleft_LU = {
-    "ksp_type": "preonly",
-    "pc_type": "python",
-    "pc_python_type": "firedrake.AssembledPC",
-    "assembled_pc_type": "lu",
-    "assembled_pc_factor_mat_solver_type": "mumps"
+patch_parameters = {
+    'pc_patch': {
+        'save_operators': True,
+        'partition_of_unity': True,
+        'sub_mat_type': 'seqdense',
+        'construct_dim': 0,
+        'construct_type': args.patch,
+        'local_type': 'additive',
+        'precompute_element_tensors': True,
+        'symmetrise_sweep': False,
+        'dense_inverse': True,
+    },
+    'sub': {
+        'ksp_type': 'preonly',
+        'pc_type': 'lu',
+    }
+}
+
+mg_parameters = {
+    'levels': {
+        'ksp_type': 'gmres',
+        'ksp_max_it': args.kspmg,
+        'pc_type': 'python',
+        'pc_python_type': 'firedrake.PatchPC',
+        'patch': patch_parameters
+    },
+    'coarse': lu_parameters
 }
 
 topleft_MG = {
-    "ksp_type": "preonly",
-    "pc_type": "mg",
-    #"pc_mg_type": "full",
-    "mg_coarse_ksp_type": "preonly",
-    "mg_coarse_pc_type": "python",
-    "mg_coarse_pc_python_type": "firedrake.AssembledPC",
-    "mg_coarse_assembled_pc_type": "lu",
-    "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
-    "mg_levels_ksp_type": "gmres",
-    "mg_levels_ksp_max_it": args.kspmg,
-    "mg_levels_pc_type": "python",
-    "mg_levels_pc_python_type": "firedrake.PatchPC",
-    "mg_levels_patch_pc_patch_save_operators": True,
-    "mg_levels_patch_pc_patch_partition_of_unity": False,
-    "mg_levels_patch_pc_patch_sub_mat_type": "seqaij",
-    "mg_levels_patch_pc_patch_construct_type": "star",
-    "mg_levels_patch_pc_patch_multiplicative": False,
-    "mg_levels_patch_pc_patch_symmetrise_sweep": False,
-    "mg_levels_patch_pc_patch_construct_dim": 0,
-    "mg_levels_patch_pc_patch_sub_mat_type": "seqdense",
-    "mg_levels_patch_pc_patch_dense_inverse": True,
-    "mg_levels_patch_pc_patch_precompute_element_tensors": True,
-    "mg_levels_patch_sub_pc_factor_mat_solver_type": "petsc",
-    "mg_levels_patch_sub_ksp_type": "preonly",
-    "mg_levels_patch_sub_pc_type": "lu",
-}
-
-topleft_MGs = {
-    "ksp_type": "preonly",
-    "ksp_max_it": 3,
-    "pc_type": "mg",
-    "mg_coarse_ksp_type": "preonly",
-    "mg_coarse_pc_type": "python",
-    "mg_coarse_pc_python_type": "firedrake.AssembledPC",
-    "mg_coarse_assembled_pc_type": "lu",
-    "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
-    "mg_levels_ksp_type": "gmres",
-    "mg_levels_ksp_max_it": args.kspmg,
-    "mg_levels_pc_type": "python",
-    "mg_levels_pc_python_type": "firedrake.AssembledPC",
-    "mg_levels_assembled_pc_type": "python",
-    "mg_levels_assembled_pc_python_type": "firedrake.ASMStarPC",
-    "mg_levels_assembled_pc_star_backend": "tinyasm",
-    "mg_levels_assmbled_pc_star_construct_dim": 0
+    'ksp_type': 'preonly',
+    'pc_type': 'mg',
+    'mg': mg_parameters
 }
 
 topleft_smoother = {
     "ksp_type": "gmres",
-    "ksp_max_it": 3,
-    "ksp_monitor": None,
+    "ksp_max_it": args.kspmg,
     "pc_type": "python",
     "pc_python_type": "firedrake.PatchPC",
-    "patch_pc_patch_save_operators": True,
-    "patch_pc_patch_partition_of_unity": False,
-    "patch_pc_patch_sub_mat_type": "seqaij",
-    "patch_pc_patch_construct_type": "star",
-    "patch_pc_patch_multiplicative": False,
-    "patch_pc_patch_symmetrise_sweep": False,
-    "patch_pc_patch_construct_dim": 0,
-    "patch_sub_ksp_type": "preonly",
-    "patch_sub_pc_type": "lu",
+    "patch": patch_parameters
 }
 
 if args.tlblock == "mg":
     sparameters["fieldsplit_0"] = topleft_MG
 elif args.tlblock == "patch":
     sparameters["fieldsplit_0"] = topleft_smoother
+elif args.tlblock=="lu":
+    sparameters["fieldsplit_0"] = lu_parameters
 else:
-    assert(args.tlblock=="lu")
-    sparameters["fieldsplit_0"] = topleft_LU
-dt = 60*60*args.dt
-dT.assign(dt)
+    raise ValueError("Unrecognised tlblock argument")
+
 t = 0.
 
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
@@ -351,22 +309,10 @@ ctx = {"mu": gamma*2/g/dt}
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         solver_parameters=sparameters,
                                         appctx=ctx)
-vtransfer = mg.ManifoldTransfer()
-tm = fd.TransferManager()
-transfers = {
-    V1.ufl_element(): (vtransfer.prolong, vtransfer.restrict,
-                       vtransfer.inject),
-    V2.ufl_element(): (vtransfer.prolong, vtransfer.restrict,
-                       vtransfer.inject)
-}
-transfermanager = fd.TransferManager(native_transfers=transfers)
-nsolver.set_transfer_manager(transfermanager)
+nsolver.set_transfer_manager(mg.manifold_transfer_manager(W))
 
-dmax = args.dmax
-hmax = 24*dmax
-tmax = 60.*60.*hmax
-hdump = args.dumpt
-dumpt = hdump*60.*60.
+tmax = args.dmax*earth.day
+dumpt = args.dumpt*units.hour
 tdump = 0.
 
 un = fd.Function(V1, name="Velocity")
@@ -379,20 +325,16 @@ h0 = Un.subfunctions[1]
 u0.assign(un)
 h0.assign(etan + H - b)
 
-q = fd.TrialFunction(V0)
-p = fd.TestFunction(V0)
+from utils.diagnostics import potential_vorticity_calculator
+
+pvcalc = potential_vorticity_calculator(V1, "CG", degree+2)
 
 qn = fd.Function(V0, name="Relative Vorticity")
-veqn = q*p*dx + fd.inner(perp(fd.grad(p)), un)*dx
-vprob = fd.LinearVariationalProblem(fd.lhs(veqn), fd.rhs(veqn), qn)
-qparams = {'ksp_type':'cg'}
-qsolver = fd.LinearVariationalSolver(vprob,
-                                     solver_parameters=qparams)
 
-file_sw = fd.File(args.filename+'.pvd')
+file_sw = fd.File(f'output/{args.filename}.pvd')
 etan.assign(h0 - H + b)
 un.assign(u0)
-qsolver.solve()
+qn.assign(pvcalc(un))
 file_sw.write(un, etan, qn)
 Unp1.assign(Un)
 
@@ -409,7 +351,7 @@ while t < tmax + 0.5*dt:
     if tdump > dumpt - dt*0.5:
         etan.assign(h0 - H + b)
         un.assign(u0)
-        qsolver.solve()
+        qn.assign(pvcalc(un))
         file_sw.write(un, etan, qn)
         tdump -= dumpt
     stepcount += 1
