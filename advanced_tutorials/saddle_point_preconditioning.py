@@ -25,7 +25,7 @@ def build_problem(mesh_size, parameters, aP=None, mat_type='aij'):
 
     if aP is not None:
         aP = aP(W)
-        #P = fd.assemble(aP(W), mat_type=mat_type)
+        P = fd.assemble(aP, mat_type=mat_type)
 
     w = fd.Function(W)
     problem = fd.LinearVariationalProblem(a, L, w, aP=aP)
@@ -143,8 +143,8 @@ def riesz(W):
     return (fd.dot(sigma, tau) + fd.div(sigma)*fd.div(tau) + u*v)*fd.dx
 
 parameters = {
-    #'ksp_monitor': None,
-    #'ksp_converged_reason': None,
+    'ksp_monitor': None,
+    'ksp_converged_reason': None,
     'ksp_type': 'fgmres',
     'ksp_rtol': 1e-8,
     'pc_type': 'fieldsplit',
@@ -156,32 +156,6 @@ parameters = {
         'ksp_type': 'preonly',
         'pc_type': 'lu',
         'pc_factor_mat_solver_type': 'mumps',
-# ~         # ~ 
-# ~         # ~ 'ksp_type': 'richardson',
-# ~         # ~ 'ksp_richardson_scale': 1./3,
-# ~         # ~ 'pc_type': 'python',
-# ~         # ~ 'pc_python_type': 'firedrake.PatchPC',
-# ~         # ~ 'patch_pc_patch_local_type': 'additive',
-# ~         # ~ 'patch_pc_patch_construct_type': 'star',
-# ~         # ~ 'patch_pc_patch_construct_dim': 0,
-# ~         # ~ ~
-# ~         # ~ 'ksp_type': 'cg',
-# ~         # ~ 'pc_type': 'mg',
-# ~         # ~ 'mg_levels': {
-# ~         # ~     'ksp_type': 'richardson',
-# ~         # ~     'ksp_richardson_scale': 1./3,
-# ~         # ~     'pc_type': 'python',
-# ~         # ~     'pc_python_type': 'firedrake.PatchPC',
-# ~         # ~     'patch_pc_patch_local_type': 'additive',
-# ~         # ~     'patch_pc_patch_construct_type': 'star',
-# ~         # ~     'patch_pc_patch_construct_dim': 0,
-# ~         # ~ },
-# ~         # ~ 'mg_coarse': {
-# ~         # ~     'pc_type': 'python',
-# ~         # ~     'pc_python_type': 'firedrake.AssembledPC',
-# ~         # ~     'assembled_pc_type': 'lu',
-# ~         # ~     'assembled_pc_factor_mat_solver_type': 'mumps',
-# ~         # ~ }
     },
     'fieldsplit_1': {
         #'ksp_converged_reason': None,
